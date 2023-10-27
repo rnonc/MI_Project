@@ -1,6 +1,6 @@
 # MI_Project
-Improve performance with disentanglement in FER
-Follow the process in main_Biovid.ipynb
+- Improve performance with disentanglement in FER
+- Follow the process in main_Biovid.ipynb
 
 
 
