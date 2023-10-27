@@ -40,7 +40,7 @@ class Dataset_MOVI_image(torch.utils.data.Dataset):
         return img_tensor
     
 class Dataset_AffectNet_image(torch.utils.data.Dataset):
-    def __init__(self,PATH_IMG,PATH_ANOT,transform = lambda x: x,nb_image=None,type_output='expression',crop=False,balanced=True,nb_class=8,preload=False):
+    def __init__(self,PATH_IMG,PATH_ANOT,transform = lambda x: x,nb_image=None,type_output='expression',crop=False,balanced=True,nb_class=8,preload=False,loaded_resolution=224):
         self.PATH_IMG = PATH_IMG
         self.PATH_ANOT = PATH_ANOT
         self.transform = transform
@@ -51,12 +51,13 @@ class Dataset_AffectNet_image(torch.utils.data.Dataset):
         self.nb_class = nb_class
         self.reset()
         self.preloaded = preload
+        self.resize  = torchvision.transforms.Resize((loaded_resolution,loaded_resolution),antialias=True)
+        dataframe = pd.read_csv(self.PATH_ANOT,index_col=0)
+        dataframe = dataframe[(dataframe['lost'] == 0) & (dataframe['expression'] < self.nb_class)]
+        N = len(dataframe)
+        self.dic_image = {}
+        self.img_loaded = torch.zeros((N,) + (3,loaded_resolution,loaded_resolution),dtype=torch.uint8)
         if preload:
-            resize  = torchvision.transforms.Resize((224,224),antialias=True)
-            dataframe = pd.read_csv(self.PATH_ANOT,index_col=0)
-            dataframe = dataframe[(dataframe['lost'] == 0) & (dataframe['expression'] < self.nb_class)]
-            N = len(dataframe)
-            self.dic_image = {}
             loader = tqdm(dataframe.index)
             for i,p in enumerate(loader):
                 img = torchvision.io.read_image(self.PATH_IMG+'/'+dataframe.loc[p,'subDirectory_filePath'])
@@ -67,9 +68,7 @@ class Dataset_AffectNet_image(torch.utils.data.Dataset):
                                                             int(dataframe.loc[p,'face_y']),
                                                             int(dataframe.loc[p,'face_height']),
                                                             int(dataframe.loc[p,'face_width']))
-                img = resize(img)
-                if i == 0:                      
-                    self.img_loaded = torch.zeros((N,) + img.shape,dtype=torch.uint8)
+                img = self.resize(img)
                 self.img_loaded[i]=img
         
         
@@ -110,17 +109,21 @@ class Dataset_AffectNet_image(torch.utils.data.Dataset):
 
     def __getitem__(self,idx):
         index = self.index_link[idx]
-        if self.preloaded:
-            img_tensor = self.img_loaded[self.dic_image[index]]
-        else:
-            img_tensor = torchvision.io.read_image(self.PATH_IMG+'/'+self.dataframe.loc[index,'subDirectory_filePath'])
-            if self.crop:
-                img_tensor = torchvision.transforms.functional.crop(img_tensor,
-                                                                    int(self.dataframe.loc[index,'face_x']),
-                                                                    int(self.dataframe.loc[index,'face_y']),
-                                                                    int(self.dataframe.loc[index,'face_height']),
-                                                                    int(self.dataframe.loc[index,'face_width']))
+
+        try :
+            i = self.dic_image[index]
+        except:
+            i = len(self.dic_image)
+            self.dic_image[index] = i
+            l_img = torchvision.io.read_image(self.PATH_IMG+'/'+self.dataframe.loc[index,'subDirectory_filePath'])
+            l_img = torchvision.transforms.functional.crop(l_img,
+                                                            int(self.dataframe.loc[index,'face_x']),
+                                                            int(self.dataframe.loc[index,'face_y']),
+                                                            int(self.dataframe.loc[index,'face_height']),
+                                                            int(self.dataframe.loc[index,'face_width']))
+            self.img_loaded[i] = self.resize(l_img)
         
+        img_tensor = self.img_loaded[i]
         img_tensor = self.transform(img_tensor)
 
         if self.type_output == 'expression':
@@ -336,18 +339,17 @@ class Dataset_Biovid_image_binary_class(torch.utils.data.Dataset):
         index = self.index_link[idx]
         try :
             i = self.dic_image[index]
-            img_tensor = self.img_loaded[i]
-            #print('loaded')
         except:
             i = len(self.dic_image)
             self.dic_image[index] = i
             self.img_loaded[i] = self.resize(torchvision.io.read_image(self.PATH_IMG+'/'+self.dataframe.loc[index,'path'][20:]))
-            img_tensor = self.img_loaded[i]
-            #print('save and loaded : ',i)
-
+        
+        img_tensor = self.img_loaded[i]
         img_tensor = self.transform(img_tensor)
+
         pain_tensor = self.dataframe.loc[index,'pain']
         ID_tensor = self.dic_ID[self.dataframe.loc[index,'ID']]
+        
         return img_tensor, pain_tensor,ID_tensor
 
 class Dataset_Biovid_image(torch.utils.data.Dataset):
